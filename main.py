@@ -11,6 +11,9 @@ render = Render(1000, 1000)
 #cargar textura
 texture = Texture('textureF.bmp')
 
+
+#medium
+#               eye, center, up
 render.lookAt(V3(-0.2,0,20), V3(0,0,0), V3(0,1,0))
 render.glObjModel('formica.obj',translate=(0,0,0), scale=(0.3,0.3,0.3), rotate=(0,0.5,0.36), texture=texture)
 
