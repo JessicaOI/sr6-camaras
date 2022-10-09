@@ -5,7 +5,11 @@ import struct
 
 from obj import Obj
 
+from matrixmath import theorem, multM
+
 from collections import namedtuple
+
+from math import sin, cos
 
 V2 = namedtuple('Vertex2', ['x', 'y'])
 
@@ -154,7 +158,7 @@ class Render(object):
         for y in range(bbox_min.y, bbox_max.y + 1):
             # coordenadas baricentricas
             w, v, u = barycentric(A, B, C, V2(x,y))
-            # condicion para evitar los numeros negativos
+            # evita numeros negativos
             if (w<0) or (v<0) or (u<0):
                 continue
             if texture:
@@ -163,7 +167,7 @@ class Render(object):
                 tx = tA.x * w + tB.x * v + tC.x * u
                 ty = tA.y * w + tB.y * v + tC.y * u
                 color = texture.intensity(tx, ty, intensity)
-            # valores de z
+
             z = A.z * w + B.z * v + C.z * u
             if (x<0) or (y<0):
                 continue
@@ -171,80 +175,171 @@ class Render(object):
                 self.point(x, y, color)
                 self.zbuffer[x][y] = z
 
-  
-  def glObjModel(self, filename, translate=(0, 0, 0), scale=(1, 1, 1), texture=None):
-    model = Obj(filename)
-    light = V3(0,0,1)
+#Uso de matrices
 
-    for face in model.faces:
+  def loadModelMatrix(self, translate=(0, 0, 0), scale=(1, 1, 1), rotate=(0, 0, 0)):
+    #Mandamos los datos
+    translate = V3(*translate)
+    scale = V3(*scale)
+    rotate = V3(*rotate)
+    #Matriz de translacion
+    translatenMatrix = [
+        [1, 0, 0, translate.x],
+        [0, 1, 0, translate.y],
+        [0, 0, 1, translate.z],
+        [0, 0, 0, 1],
+    ]
+    #Matriz de escalar
+    scaleMatrix = [
+        [scale.x, 0, 0, 0],
+        [0, scale.y, 0, 0],
+        [0, 0, scale.z, 0],
+        [0, 0, 0, 1],
+    ]
+
+    rotation_x = [
+        [1, 0, 0, 0],
+        [0, cos(rotate.x), -sin(rotate.x), 0],
+        [0, sin(rotate.x),  cos(rotate.x), 0],
+        [0, 0, 0, 1]
+    ]
+
+    rotation_y = [
+            [cos(rotate.y), 0, sin(rotate.y), 0],
+            [0, 1, 0, 0],
+            [-sin(rotate.y), 0, cos(rotate.y), 0],
+            [0, 0, 0, 1]
+    ]
+
+    rotation_z = [
+        [cos(rotate.z), -sin(rotate.z), 0, 0],
+        [sin(rotate.z),  cos(rotate.z), 0, 0],
+        [0, 0, 1, 0],
+        [0, 0, 0, 1],
+    ]
+
+    rotateMatriz = multM(multM(rotation_x, rotation_y), rotation_z)
+    self.Model = multM(multM(translatenMatrix, rotateMatriz), scaleMatrix)
+
+  def loadViewMatrix(self, x, y, z, center):
+    M = [
+        [x.x, x.y, x.z, 0],
+        [y.x, y.y, y.z, 0],
+        [z.x, z.y, z.z, 0],
+        [0, 0, 0, 1]
+    ]
+    O = [
+        [1, 0, 0, -center.x],
+        [0, 1, 0, -center.y],
+        [0, 0, 1, -center.z],
+        [0, 0, 0, 1]
+    ]
+    self.View = multM(M, O)
+
+  def loadProjectionMatrix(self, coeff):
+    self.Projection = [
+        [1, 0, 0, 0],
+        [0, 1, 0, 0],
+        [0, 0, 1, 0],
+        [0, 0, coeff, 1]
+    ]
+
+  def loadViewportMatrix(self, x = 0, y = 0):
+    self.Viewport = [
+        [(self.width*0.5), 0, 0, ( x+self.width*0.5)],
+        [0, (self.height*0.5), 0, (y+self.height*0.5)],
+        [0, 0, 128, 128],
+        [0, 0, 0, 1]
+    ]
+
+    
+   #Funcion para la vista
+  def lookAt(self, eye, center, up):
+
+    z = norm(sub(eye, center))
+    x = norm(cross(up, z))
+    y = norm(cross(z, x))
+
+    self.loadViewMatrix(x, y, z, center)
+    self.loadProjectionMatrix( -1 / length(sub(eye, center)))
+    self.loadViewportMatrix()
+
+
+  def glObjModel(self, filename, mtl=None, translate=(0, 0, 0), scale=(1, 1, 1), rotate=(0,0,0), texture=None):
+
+    archivo = Obj(filename)
+    archivo.read()
+    self.light = V3(0,0,1)
+    self.loadModelMatrix(translate, scale, rotate) 
+    
+    #Ciclo para recorrer las carras
+    for face in archivo.faces:
         vcount = len(face)
-
         if vcount == 3:
-          f1 = face[0][0] - 1
-          f2 = face[1][0] - 1
-          f3 = face[2][0] - 1
-
-          a = self.transform(model.vertices[f1], translate, scale)
-          b = self.transform(model.vertices[f2], translate, scale)
-          c = self.transform(model.vertices[f3], translate, scale)
-
-          normal = norm(cross(sub(b, a), sub(c, a)))
-          intensity = dot(normal, light)
-
-          if not texture:
-            grey = round(255 * intensity)
-            if grey < 0:
-              continue
-            self.triangle(a, b, c, color=color(grey, grey, grey))
-          else:
-            t1 = face[0][1] - 1
-            t2 = face[1][1] - 1
-            t3 = face[2][1] - 1
-            tA = V3(*model.texcoords[t1])
-            tB = V3(*model.texcoords[t2])
-            tC = V3(*model.texcoords[t3])
-
-            self.triangle(a, b, c, texture=texture, texture_coords=(tA, tB, tC), intensity=intensity)
-          
+            f1 = face[0][0] - 1
+            f2 = face[1][0] - 1
+            f3 = face[2][0] - 1
+            a = self.transform(V3(*archivo.vertices[f1]))
+            b = self.transform(V3(*archivo.vertices[f2]))
+            c = self.transform(V3(*archivo.vertices[f3]))
+ 
+            vnormal = norm(cross(sub(b,a), sub(c,a)))
+            intensity = dot(vnormal, self.light)
+            if intensity<0:
+                continue
+            if texture:
+                t1 = face[0][1] - 1
+                t2 = face[1][1] - 1
+                t3 = face[2][1] - 1
+                tA = V3(*archivo.texcoords[t1])
+                tB = V3(*archivo.texcoords[t2])
+                tC = V3(*archivo.texcoords[t3])
+                self.triangle(a,b,c, texture=texture, texture_coords=(tA,tB,tC), intensity=intensity)
+            else:
+                grey =round(255*intensity)
+                if grey<0:
+                    continue
+                self.triangle(a,b,c, color=color(grey,grey,grey))
         else:
-          # assuming 4
-          f1 = face[0][0] - 1
-          f2 = face[1][0] - 1
-          f3 = face[2][0] - 1
-          f4 = face[3][0] - 1   
+            # assuming 4
+            f1 = face[0][0] - 1
+            f2 = face[1][0] - 1
+            f3 = face[2][0] - 1
+            f4 = face[3][0] - 1   
 
-          vertices = [
-            self.transform(model.vertices[f1], translate, scale),
-            self.transform(model.vertices[f2], translate, scale),
-            self.transform(model.vertices[f3], translate, scale),
-            self.transform(model.vertices[f4], translate, scale)
-          ]
+            vertices = [
+                self.transform(V3(*archivo.vertices[f1])),
+                self.transform(V3(*archivo.vertices[f2])),
+                self.transform(V3(*archivo.vertices[f3])),
+                self.transform(V3(*archivo.vertices[f4]))
+            ]
 
-          normal = norm(cross(sub(vertices[0], vertices[1]), sub(vertices[1], vertices[2])))  # no necesitamos dos normales!!
-          intensity = dot(normal, light)
-          grey = round(255 * intensity)
-
-          A, B, C, D = vertices 
-
-          if not texture:
+            normal = norm(cross(sub(vertices[0], vertices[1]), sub(vertices[1], vertices[2])))
+            intensity = dot(normal, self.light)
             grey = round(255 * intensity)
-            if grey < 0:
-              continue
-            self.triangle(A, B, C, color(grey, grey, grey))
-            self.triangle(A, C, D, color(grey, grey, grey))            
-          else:
-            t1 = face[0][1] - 1
-            t2 = face[1][1] - 1
-            t3 = face[2][1] - 1
-            t4 = face[3][1] - 1
-            tA = V3(*model.texcoords[t1])
-            tB = V3(*model.texcoords[t2])
-            tC = V3(*model.texcoords[t3])
-            tD = V3(*model.texcoords[t4])
-            
-            self.triangle(A, B, C, texture=texture, texture_coords=(tA, tB, tC), intensity=intensity)
-            self.triangle(A, C, D, texture=texture, texture_coords=(tA, tC, tD), intensity=intensity)
-            
+
+            A, B, C, D = vertices 
+
+            if not texture:
+                grey = round(255 * intensity)
+                if grey < 0:
+                    continue
+                self.triangle(A, B, C, color(grey, grey, grey))
+                self.triangle(A, C, D, color(grey, grey, grey))            
+            else:
+                t1 = face[0][1] - 1
+                t2 = face[1][1] - 1
+                t3 = face[2][1] - 1
+                t4 = face[3][1] - 1
+                tA = V3(*archivo.texcoords[t1])
+                tB = V3(*archivo.texcoords[t2])
+                tC = V3(*archivo.texcoords[t3])
+                tD = V3(*archivo.texcoords[t4])
+                
+                self.triangle(A, B, C, texture=texture, texture_coords=(tA, tB, tC), intensity=intensity)
+                self.triangle(A, C, D, texture=texture, texture_coords=(tA, tC, tD), intensity=intensity)
+
+  
   # Función para crear la imagen
   def glFinish(self, filename):
       f = open(filename, 'bw')
@@ -277,9 +372,17 @@ class Render(object):
       f.close()
 
   #Transformacion 
-  def transform(self, vertex, translate=(0,0,0), scale=(1,1,1)):
-    t1 = round((vertex[0] + translate[0]) * scale[0])
-    t2 = round((vertex[1] + translate[1]) * scale[1])
-    t3 = round((vertex[2] + translate[2]) * scale[2])
-
-    return V3(t1,t2,t3)
+  def transform(self, vector):
+    nuevoVector = [[vector.x], [vector.y], [vector.z], [1]]
+    #Se multiplican las matrices
+    modelMultix = multM(self.Viewport, self.Projection)
+    viewMultix = multM(modelMultix, self.View)
+    vpMultix = multM(viewMultix, self.Model)
+    vectores = multM(vpMultix, nuevoVector)
+    #transformacion
+    transformVector = [
+        round(vectores[0][0]/vectores[3][0]),
+        round(vectores[1][0]/vectores[3][0]),
+        round(vectores[2][0]/vectores[3][0])
+    ]
+    return V3(*transformVector)

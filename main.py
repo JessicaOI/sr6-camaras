@@ -1,7 +1,7 @@
 #Jessica Ortiz 20192
 #sr5 texturas
 
-from cargar import Render
+from cargar import *
 
 from textures import Texture
 
@@ -11,8 +11,8 @@ render = Render(1000, 1000)
 #cargar textura
 texture = Texture('textureF.bmp')
 
-#definicr objeto, posicion(xyz), tamaño, textura
-render.glObjModel('formica.obj', (5, 0, 0), (100, 100, 100), texture=texture)
+render.lookAt(V3(-0.2,0,20), V3(0,0,0), V3(0,1,0))
+render.glObjModel('formica.obj',translate=(0,0,0), scale=(0.3,0.3,0.3), rotate=(0,0.5,0.36), texture=texture)
 
 #imagen final
 render.glFinish('output.bmp')
